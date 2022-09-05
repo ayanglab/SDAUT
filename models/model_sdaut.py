@@ -1,7 +1,7 @@
 '''
 # -----------------------------------------
 Model
-SDAUT m.1.1
+SDAUT m.1.3
 by Jiahao Huang (j.huang21@imperial.ac.uk)
 # -----------------------------------------
 '''
@@ -10,7 +10,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 from torch.optim import lr_scheduler
-from torch.optim import Adam
+from torch.optim import Adam, AdamW
 
 from models.select_network import define_G
 from models.model_base import ModelBase
@@ -23,6 +23,8 @@ from utils.utils_swinmr import *
 
 import matplotlib.pyplot as plt
 import einops
+from math import ceil
+import copy
 
 class MRI_SDAUT(ModelBase):
 
@@ -32,10 +34,16 @@ class MRI_SDAUT(ModelBase):
         # define network
         # ------------------------------------
         self.opt_train = self.opt['train']    # training option
+        self.opt_dataset = self.opt['datasets']
         self.netG = define_G(opt)
         self.netG = self.model_to_device(self.netG)
+        if self.opt_train['freeze_patch_embedding']:
+            for para in self.netG.module.patch_embed.parameters():
+                para.requires_grad = False
+            print("Patch Embedding Frozen (Requires Grad)!")
         if self.opt_train['E_decay'] > 0:
             self.netE = define_G(opt).to(self.device).eval()
+
 
     """
     # ----------------------------------------
@@ -56,8 +64,9 @@ class MRI_SDAUT(ModelBase):
         self.define_scheduler()               # define scheduler
         self.log_dict = OrderedDict()         # log
 
+
     # ----------------------------------------
-    # load pre-trained G model
+    # load pre-trained G and E model
     # ----------------------------------------
     def load(self):
         load_path_G = self.opt['path']['pretrained_netG']
@@ -68,8 +77,7 @@ class MRI_SDAUT(ModelBase):
         if self.opt_train['E_decay'] > 0:
             if load_path_E is not None:
                 print('Loading model for E [{:s}] ...'.format(load_path_E))
-                self.load_network(load_path_E, self.netE, strict=self.opt_train['E_param_strict'],
-                                  param_key='params_ema')
+                self.load_network(load_path_E, self.netE, strict=self.opt_train['E_param_strict'], param_key='params_ema')
             else:
                 print('Copying model for E ...')
                 self.update_E(0)
@@ -141,7 +149,21 @@ class MRI_SDAUT(ModelBase):
                 G_optim_params.append(v)
             else:
                 print('Params [{:s}] will not optimize.'.format(k))
-        self.G_optimizer = Adam(G_optim_params, lr=self.opt_train['G_optimizer_lr'], weight_decay=0)
+
+        if self.opt_train['G_optimizer_type'] == 'adam':
+            if self.opt_train['freeze_patch_embedding']:
+                self.G_optimizer = Adam(filter(lambda p: p.requires_grad, G_optim_params), lr=self.opt_train['G_optimizer_lr'], weight_decay=self.opt_train['G_optimizer_wd'])
+                print("Patch Embedding Frozen (Optimizer)!")
+            else:
+                self.G_optimizer = Adam(G_optim_params, lr=self.opt_train['G_optimizer_lr'], weight_decay=self.opt_train['G_optimizer_wd'])
+        elif self.opt_train['G_optimizer_type'] == 'adamw':
+            if self.opt_train['freeze_patch_embedding']:
+                self.G_optimizer = AdamW(filter(lambda p: p.requires_grad, G_optim_params), lr=self.opt_train['G_optimizer_lr'],  weight_decay=self.opt_train['G_optimizer_wd'])
+                print("Patch Embedding Frozen (Optimizer)!")
+            else:
+                self.G_optimizer = AdamW(G_optim_params, lr=self.opt_train['G_optimizer_lr'], weight_decay=self.opt_train['G_optimizer_wd'])
+        else:
+            raise NotImplementedError
 
     # ----------------------------------------
     # define scheduler, only "MultiStepLR"
@@ -165,7 +187,7 @@ class MRI_SDAUT(ModelBase):
     def feed_data(self, data, need_H=True):
         self.H = data['H'].to(self.device)
         self.L = data['L'].to(self.device)
-        self.mask = data['mask'].to(self.device)
+        # self.mask = data['mask'].to(self.device)
 
     # ----------------------------------------
     # feed L to netG
@@ -177,6 +199,7 @@ class MRI_SDAUT(ModelBase):
     # update parameters and get loss
     # ----------------------------------------
     def optimize_parameters(self, current_step):
+        self.current_step = current_step
         self.G_optimizer.zero_grad()
         self.netG_forward()
 
@@ -189,24 +212,20 @@ class MRI_SDAUT(ModelBase):
         # `clip_grad_norm` helps prevent the exploding gradient problem.
         G_optimizer_clipgrad = self.opt_train['G_optimizer_clipgrad'] if self.opt_train['G_optimizer_clipgrad'] else 0
         if G_optimizer_clipgrad > 0:
-            torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=self.opt_train['G_optimizer_clipgrad'],
-                                           norm_type=2)
+            torch.nn.utils.clip_grad_norm_(self.parameters(), max_norm=self.opt_train['G_optimizer_clipgrad'], norm_type=2)
 
         self.G_optimizer.step()
 
         # ------------------------------------
         # regularizer
         # ------------------------------------
-        G_regularizer_orthstep = self.opt_train['G_regularizer_orthstep'] if self.opt_train[
-            'G_regularizer_orthstep'] else 0
-        if G_regularizer_orthstep > 0 and current_step % G_regularizer_orthstep == 0 and current_step % \
-                self.opt['train']['checkpoint_save'] != 0:
+        G_regularizer_orthstep = self.opt_train['G_regularizer_orthstep'] if self.opt_train['G_regularizer_orthstep'] else 0
+        if G_regularizer_orthstep > 0 and current_step % G_regularizer_orthstep == 0 and current_step % self.opt['train']['checkpoint_save'] != 0:
             self.netG.apply(regularizer_orth)
-        G_regularizer_clipstep = self.opt_train['G_regularizer_clipstep'] if self.opt_train[
-            'G_regularizer_clipstep'] else 0
-        if G_regularizer_clipstep > 0 and current_step % G_regularizer_clipstep == 0 and current_step % \
-                self.opt['train']['checkpoint_save'] != 0:
+        G_regularizer_clipstep = self.opt_train['G_regularizer_clipstep'] if self.opt_train['G_regularizer_clipstep'] else 0
+        if G_regularizer_clipstep > 0 and current_step % G_regularizer_clipstep == 0 and current_step % self.opt['train']['checkpoint_save'] != 0:
             self.netG.apply(regularizer_clip)
+
         # ------------------------------------
         # record log
         # ------------------------------------
@@ -218,6 +237,35 @@ class MRI_SDAUT(ModelBase):
         if self.opt_train['E_decay'] > 0:
             self.update_E(self.opt_train['E_decay'])
 
+    def record_loss_for_val(self):
+
+        G_loss = self.G_lossfn_weight * self.total_loss()
+
+        self.log_dict['G_loss'] = G_loss.item()
+        self.log_dict['G_loss_image'] = self.loss_image.item()
+        self.log_dict['G_loss_frequency'] = self.loss_freq.item()
+        self.log_dict['G_loss_preceptual'] = self.loss_perc.item()
+
+
+    def check_windowsize(self):
+
+        self.window_size = self.opt['netG']['window_size']
+        _, _, h_old, w_old = self.H.size()
+        h_pad = ceil(h_old / (self.window_size * 8)) * (self.window_size * 8) - h_old  # downsampling for 3 times (2^3=8)
+        w_pad = ceil(w_old / (self.window_size * 8)) * (self.window_size * 8) - w_old
+        self.h_old = h_old
+        self.w_old = w_old
+        self.H = torch.cat([self.H, torch.flip(self.H, [2])], 2)[:, :, :h_old + h_pad, :]
+        self.H = torch.cat([self.H, torch.flip(self.H, [3])], 3)[:, :, :, :w_old + w_pad]
+        self.L = torch.cat([self.L, torch.flip(self.L, [2])], 2)[:, :, :h_old + h_pad, :]
+        self.L = torch.cat([self.L, torch.flip(self.L, [3])], 3)[:, :, :, :w_old + w_pad]
+
+    def recover_windowsize(self):
+
+        self.L = self.L[..., :self.h_old, :self.w_old]
+        self.H = self.H[..., :self.h_old, :self.w_old]
+        self.E = self.E[..., :self.h_old, :self.w_old]
+
     # ----------------------------------------
     # test / inference
     # ----------------------------------------
@@ -225,15 +273,6 @@ class MRI_SDAUT(ModelBase):
         self.netG.eval()
         with torch.no_grad():
             self.netG_forward()
-        self.netG.train()
-
-    # ----------------------------------------
-    # test / inference x8
-    # ----------------------------------------
-    def testx8(self):
-        self.netG.eval()
-        with torch.no_grad():
-            self.E = test_mode(self.netG, self.L, mode=3, sf=self.opt['scale'], modulo=1)
         self.netG.train()
 
     # ----------------------------------------
@@ -251,6 +290,14 @@ class MRI_SDAUT(ModelBase):
         out_dict['E'] = self.E.detach()[0].float().cpu()
         if need_H:
             out_dict['H'] = self.H.detach()[0].float().cpu()
+        return out_dict
+
+    def current_visuals_gpu(self, need_H=True):
+        out_dict = OrderedDict()
+        out_dict['L'] = self.L.detach()[0].float()
+        out_dict['E'] = self.E.detach()[0].float()
+        if need_H:
+            out_dict['H'] = self.H.detach()[0].float()
         return out_dict
 
     # ----------------------------------------
@@ -305,4 +352,3 @@ class MRI_SDAUT(ModelBase):
     def info_params(self):
         msg = self.describe_params(self.netG)
         return msg
-

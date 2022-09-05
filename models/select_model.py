@@ -1,14 +1,16 @@
-
-"""
-# --------------------------------------------
-# define training model
-# --------------------------------------------
-"""
-
+'''
+# -----------------------------------------
+Define Training Model
+by Jiahao Huang (j.huang21@imperial.ac.uk)
+# -----------------------------------------
+'''
 
 def define_Model(opt):
     model = opt['model']
 
+    # --------------------------------------------------------
+    # SDAUT
+    # --------------------------------------------------------
     if model == 'sdaut_npi':
         from models.model_sdaut import MRI_SDAUT as M
 

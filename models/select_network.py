@@ -1,13 +1,26 @@
+'''
+# -----------------------------------------
+Define Training Network
+by Jiahao Huang (j.huang21@imperial.ac.uk)
+# -----------------------------------------
+'''
+
 import functools
 import torch
 import torchvision.models
 from torch.nn import init
 
 
+# --------------------------------------------
+# Recon Generator, netG, G
+# --------------------------------------------
 def define_G(opt):
     opt_net = opt['netG']
     net_type = opt_net['net_type']
 
+    # ----------------------------------------
+    # SDAUT
+    # ----------------------------------------
     if net_type == 'sdaut':
         from models.network_sdaut import SDAUT as net
         netG = net(img_size=opt_net['img_size'],
@@ -26,9 +39,6 @@ def define_G(opt):
                    no_off=opt_net['no_off'],
                    fixed_pe=opt_net['fixed_pe'],)
 
-    else:
-        raise NotImplementedError('netG [{:s}] is not found.'.format(net_type))
-
     # ----------------------------------------
     # initialize weights
     # ----------------------------------------
@@ -39,6 +49,7 @@ def define_G(opt):
                      gain=opt_net['init_gain'])
 
     return netG
+
 
 # --------------------------------------------
 # VGGfeature, netF, F
@@ -59,13 +70,9 @@ def define_F(opt, use_bn=False):
     return netF
 
 
-"""
 # --------------------------------------------
 # weights initialization
 # --------------------------------------------
-"""
-
-
 def init_weights(net, init_type='xavier_uniform', init_bn_type='uniform', gain=1):
     """
     # Kai Zhang, https://github.com/cszn/KAIR
