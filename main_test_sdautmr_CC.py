@@ -1,3 +1,12 @@
+'''
+# -----------------------------------------
+Main Program for Testing
+SDAUT for MRI_Recon
+Dataset: CC
+by Jiahao Huang (j.huang21@imperial.ac.uk)
+# -----------------------------------------
+'''
+
 import argparse
 import cv2
 import csv
@@ -11,9 +20,6 @@ from torch.utils.data import DataLoader
 from models.network_sdaut import SDAUT as net
 # from models.network_sdaunet_beta_attn_map import SDAUT as net
 from utils import utils_image as util
-import einops
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
 from data.select_dataset import define_Dataset
 import time
 from math import ceil
@@ -110,8 +116,9 @@ def main(json_path):
             time_start = time.time()
             img_gen = model(img_lq)
             time_end = time.time()
-            time_c = time_end - time_start  # 运行所花时间
+            time_c = time_end - time_start  # time used
             print('time cost', time_c, 's')
+
             img_lq = img_lq[..., :h_old * opt['scale'], :w_old * opt['scale']]
             img_gt = img_gt[..., :h_old * opt['scale'], :w_old * opt['scale']]
             img_gen = img_gen[..., :h_old * opt['scale'], :w_old * opt['scale']]
@@ -286,4 +293,4 @@ def setup(args):
 
 if __name__ == '__main__':
 
-    main('options/SDAUT/test/test_sdaut_CC_G1D30.json')
+    main()
