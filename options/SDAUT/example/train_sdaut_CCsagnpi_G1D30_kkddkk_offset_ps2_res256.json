@@ -1,12 +1,11 @@
 {
-  "task": "SDAUT_CCsagnpi_G1D30_kkddkk_offset_ps2_noval"    // task name
-  , "model": "sdaut_npi"    // 'swinmr_pi' or 'swinmr_npi'
-  , "mask": "G1D30"   // G1Dxx (e.g. G1D30), G2Dxx (e.g. G2D10), S10, R10
-  , "gpu_ids": [3]
+  "task": "SDAUT_CCsagnpi_G1D30_kkddkk_offset_ps2_res256"    // task name
+  , "model": "sdaut_npi"    // find keywords in ./models/select_model.py
+  , "mask": "G1D30"   // find keywords in ./models/select_mask.py
+  , "gpu_ids": [0, 1]
   , "dist": false   // distributed computing
-  , "model_path": "/media/NAS01/jiahao/SDAUT/CCsagnpi/mri_recon/SDAUT_CCsagnpi_G1D30_kkddkk_offset_ps2_noval/models/100000_G.pth"
-  , "model_name": "100000"
   , "n_channels": 1    // 1 for grayscale, 3 for color
+  , "manual_seed": 42
   , "path": {
     "root": "mri_recon"
     , "pretrained_netG": null      // path of pretrained model
@@ -17,8 +16,8 @@
     "train": {
       "name": "train_dataset"
       , "dataset_type": "ccsagnpi"
-      , "dataroot_H": "/media/NAS01/CC/db_train"    // path of H training dataset
-      , "mask": "G1D30"   // G1Dxx (e.g. G1D30), G2Dxx (e.g. G2D10), S10, R10
+      , "dataroot_H": "/trainsets/db_train"     // path of H training dataset
+      , "mask": "G1D30"   // find keywords in ./models/select_mask.py
       , "H_size": 256    // patch number for traning stage (randomly crop), set 256 to cancel randomly crop
       , "sigma": 15
       , "sigma_test": 15
@@ -26,7 +25,7 @@
       , "noise_level": 0.0    // NL = S/(S+N)
       , "noise_var": 0.1
       , "is_mini_dataset": false   // for debug
-      , "mini_dataset_prec": 1    // CC 4700 total
+      , "mini_dataset_prec": 1
       , "dataloader_shuffle": true
       , "dataloader_num_workers": 16
       , "dataloader_batch_size": 8
@@ -34,13 +33,14 @@
     , "test": {
       "name": "test_dataset"
       , "dataset_type": "ccsagnpi"
-      , "dataroot_H": "/media/NAS01/CC/db_valid"    // path of H testing dataset
-      , "mask": "G1D30"   // G1Dxx (e.g. G1D30), G2Dxx (e.g. G2D10), S10, R10
+      , "dataroot_H": "/testsets/db_test"    // path of H testing dataset
+      , "mask": "G1D30"   // find keywords in ./models/select_mask.py
       , "sigma": 15
       , "sigma_test": 15
       , "is_noise": false    // add noise in k-space
       , "noise_level": 0.0    // NL = S/(S+N)
       , "noise_var": 0.1
+      , "resize_for_fid": false
     }
   }
 
@@ -75,7 +75,6 @@
     , "beta": 0.1    // default 0.1
     , "gamma": 0.0025    // default 0.0025
     , "E_decay": 0.999    // Exponential Moving Average for netG: set 0 to disable; default setting 0.999
-
     , "G_optimizer_type": "adam"    // fixed, adam is enough
     , "G_optimizer_lr": 2e-4    // learning rate default 2e-4
     , "G_optimizer_wd": 0    // weight decay, default 0
@@ -92,10 +91,11 @@
     , "G_param_strict": true
     , "E_param_strict": true
 
-    , "checkpoint_test": 200000    // for testing 10000
+    , "checkpoint_test": 10000    // for testing 10000
     , "checkpoint_save": 10000    // for saving model 10000
     , "checkpoint_print": 200   // for print 200
     , "is_early_stopping": false
     , "early_stopping_num": 8
+    , "freeze_patch_embedding": false
   }
 }
