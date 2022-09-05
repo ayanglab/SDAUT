@@ -1,9 +1,18 @@
-
+'''
+# -----------------------------------------
+Select Dataset
+by Jiahao Huang (j.huang21@imperial.ac.uk)
+# -----------------------------------------
+'''
 
 
 def define_Dataset(dataset_opt):
     dataset_type = dataset_opt['dataset_type'].lower()
 
+    # ------------------------------------------------
+    # CC-359 Calgary Campinas Public Brain MR Dataset
+    # ------------------------------------------------
+    # CC-SAG-NPI d.1.2
     if dataset_type in ['ccsagnpi']:
         from data.dataset_CCsagnpi import DatasetCCsagnpi as D
 
